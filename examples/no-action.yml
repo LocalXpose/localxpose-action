@@ -1,0 +1,135 @@
+name: Direct CLI, No Action
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  test-localxpose:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+    
+    - name: Start HTTP server
+      run: |
+        echo "Starting Python HTTP server on port 8000..."
+        # Create a simple index.html
+        mkdir -p test-site
+        echo "<h1>Hello from LocalXpose!</h1><p>This is a proof of concept.</p>" > test-site/index.html
+        
+        # Start the server in the background
+        cd test-site && python -m http.server 8000 &
+        echo "HTTP_SERVER_PID=$!" >> $GITHUB_ENV
+        
+        # Give the server time to start
+        sleep 2
+        
+        # Verify server is running
+        curl -f http://localhost:8000 || exit 1
+        echo "✅ HTTP server is running"
+    
+    - name: Install LocalXpose CLI
+      env:
+        LX_ACCESS_TOKEN: ${{ secrets.LX_ACCESS_TOKEN }}
+      run: |
+        echo "Installing LocalXpose CLI via npm..."
+        sudo npm install -g loclx
+        loclx -h || (echo "⚠️  Failed to install 'loclx' via npm")
+        sudo snap install localxpose
+        loclx -h || (echo "⚠️  Failed to install 'loclx' via snap" && exit 1)
+
+        loclx account status || (echo "⚠️  Failed to authenticate, missing or invalid LX_ACCESS_TOKEN" && exit 1)
+        echo "✅ LocalXpose CLI installed"
+
+    - name: Create HTTP tunnel
+      env:
+        LX_ACCESS_TOKEN: ${{ secrets.LX_ACCESS_TOKEN }}
+      run: |
+        echo "Creating LocalXpose tunnel for port 8000..."
+        
+        # FIXME: replace with actual tunnel creation command
+        loclx tunnel http --to=8000 > tunnel.log 2>&1 &
+        TUNNEL_PID=$!
+        echo "TUNNEL_PID=${TUNNEL_PID}" >> $GITHUB_ENV
+        
+        # Give tunnel time to establish
+        sleep 5
+        
+        # Display tunnel information
+        echo "=== Tunnel Log ==="
+        cat tunnel.log || echo "No log file found"
+        
+        # Extract the hostname from the log output
+        TUNNEL_URL=$(grep -oE '[a-zA-Z0-9.-]+\.loclx\.io' tunnel.log | head -1 || echo "")
+        
+        if [ -n "$TUNNEL_URL" ]; then
+          # Add https:// prefix to the hostname
+          TUNNEL_URL="https://${TUNNEL_URL}"
+          echo "✅ Tunnel created: $TUNNEL_URL"
+          echo "TUNNEL_URL=${TUNNEL_URL}" >> $GITHUB_ENV
+          
+          # Test the tunnel
+          echo "Testing tunnel access..."
+          curl -f "$TUNNEL_URL" || echo "⚠️  Tunnel test failed (might need time to propagate)"
+        else
+          echo "⚠️  Could not extract tunnel URL from log"
+        fi
+    
+    - name: Display tunnel information
+      if: env.TUNNEL_URL != ''
+      run: |
+        echo "🌐 Your application is accessible at: ${{ env.TUNNEL_URL }}"
+        echo ""
+        echo "You can test it with:"
+        echo "  curl ${{ env.TUNNEL_URL }}"
+        echo ""
+        echo "This URL can be used for:"
+        echo "  - Webhook testing"
+        echo "  - Sharing local development"
+        echo "  - API integration testing"
+    
+    - name: Keep tunnel alive
+      run: |
+        echo "Keeping tunnel alive for 90 seconds..."
+        echo "Access your site at: ${{ env.TUNNEL_URL }}"
+        sleep 90
+    
+    - name: Cleanup
+      if: always()
+      run: |
+        echo "Cleaning up processes..."
+        
+        # Kill tunnel process
+        if [ -n "${{ env.TUNNEL_PID }}" ]; then
+          kill ${{ env.TUNNEL_PID }} || echo "Tunnel process already stopped"
+        fi
+        
+        # Kill HTTP server
+        if [ -n "${{ env.HTTP_SERVER_PID }}" ]; then
+          kill ${{ env.HTTP_SERVER_PID }} || echo "HTTP server already stopped"
+        fi
+        
+        echo "✅ Cleanup complete"
+    
+    - name: Upload logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: tunnel-log
+        path: tunnel.log
+        if-no-files-found: ignore

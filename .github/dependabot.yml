@@ -1,0 +1,60 @@
+# Dependabot configuration for LocalXpose Action
+# https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+
+version: 2
+updates:
+  # Maintain dependencies for npm
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "localxpose/maintainers"
+    labels:
+      - "dependencies"
+      - "npm"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    # Group dependency updates for easier review
+    groups:
+      actions:
+        patterns:
+          - "@actions/*"
+      typescript:
+        patterns:
+          - "typescript"
+          - "@types/*"
+          - "@typescript-eslint/*"
+      jest:
+        patterns:
+          - "jest*"
+          - "ts-jest"
+          - "@types/jest"
+      dev-dependencies:
+        dependency-type: "development"
+        exclude-patterns:
+          - "@actions/*"
+    # Automatically merge minor and patch updates for dev dependencies
+    allow:
+      - dependency-type: "development"
+    
+  # Maintain dependencies for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "localxpose/maintainers"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+      include: "scope"

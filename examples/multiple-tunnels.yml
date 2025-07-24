@@ -1,0 +1,246 @@
+name: Multiple Tunnels Example
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  multiple-services:
+    runs-on: ubuntu-latest
+    name: Run multiple services with separate tunnels
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      # Start multiple services
+      - name: Start API server
+        run: |
+          mkdir -p api
+          cat > api/server.js << 'EOF'
+          const http = require('http');
+          const server = http.createServer((req, res) => {
+            res.writeHead(200, {'Content-Type': 'application/json'});
+            res.end(JSON.stringify({
+              service: 'API',
+              timestamp: new Date().toISOString(),
+              path: req.url
+            }));
+          });
+          server.listen(3000, () => console.log('API running on port 3000'));
+          EOF
+          node api/server.js &
+          echo "API_PID=$!" >> $GITHUB_ENV
+          sleep 2
+      
+      - name: Start Frontend server
+        run: |
+          mkdir -p frontend
+          cat > frontend/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Frontend Service</title>
+          </head>
+          <body>
+              <h1>Frontend Service</h1>
+              <p>This is the frontend running on port 8080</p>
+              <button onclick="fetchAPI()">Call API</button>
+              <pre id="result"></pre>
+              <script>
+                async function fetchAPI() {
+                  // In real app, you'd use the API tunnel URL here
+                  const res = await fetch('/api-proxy');
+                  document.getElementById('result').textContent = await res.text();
+                }
+              </script>
+          </body>
+          </html>
+          EOF
+          cd frontend && python -m http.server 8080 &
+          echo "FRONTEND_PID=$!" >> $GITHUB_ENV
+          sleep 2
+      
+      - name: Start Admin panel
+        run: |
+          mkdir -p admin
+          cat > admin/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Admin Panel</title>
+              <style>
+                body { font-family: Arial, sans-serif; background: #f0f0f0; }
+                .container { max-width: 800px; margin: 50px auto; background: white; padding: 20px; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <h1>Admin Panel</h1>
+                  <p>Secure admin interface on port 9000</p>
+                  <ul>
+                      <li>System Status: ✅ Online</li>
+                      <li>Database: ✅ Connected</li>
+                      <li>Cache: ✅ Active</li>
+                  </ul>
+              </div>
+          </body>
+          </html>
+          EOF
+          cd admin && python -m http.server 9000 &
+          echo "ADMIN_PID=$!" >> $GITHUB_ENV
+          sleep 2
+      
+      # Create tunnels for each service
+      - name: Create API tunnel
+        id: api-tunnel
+        uses: localxpose/localxpose-action@v1
+        with:
+          port: 3000
+          token: ${{ secrets.LX_ACCESS_TOKEN }}
+          subdomain: my-api-${{ github.run_number }}  # Dynamic subdomain
+      
+      - name: Create Frontend tunnel
+        id: frontend-tunnel
+        uses: localxpose/localxpose-action@v1
+        with:
+          port: 8080
+          token: ${{ secrets.LX_ACCESS_TOKEN }}
+          subdomain: my-frontend-${{ github.run_number }}
+      
+      - name: Create Admin tunnel (TCP)
+        id: admin-tunnel
+        uses: localxpose/localxpose-action@v1
+        with:
+          port: 9000
+          token: ${{ secrets.LX_ACCESS_TOKEN }}
+          type: tcp  # Using TCP tunnel for admin panel
+          region: us
+      
+      # Display all tunnel URLs
+      - name: Display tunnel information
+        run: |
+          echo "=== 🚀 All Services are Live ==="
+          echo ""
+          echo "📡 API Service:"
+          echo "   URL: ${{ steps.api-tunnel.outputs.url }}"
+          echo "   Status: ${{ steps.api-tunnel.outputs.status }}"
+          echo ""
+          echo "🎨 Frontend Service:"
+          echo "   URL: ${{ steps.frontend-tunnel.outputs.url }}"
+          echo "   Status: ${{ steps.frontend-tunnel.outputs.status }}"
+          echo ""
+          echo "🔐 Admin Panel (TCP):"
+          echo "   URL: ${{ steps.admin-tunnel.outputs.url }}"
+          echo "   Status: ${{ steps.admin-tunnel.outputs.status }}"
+          echo ""
+          echo "=== Configuration Complete ==="
+      
+      # Test the services
+      - name: Test API tunnel
+        if: steps.api-tunnel.outputs.status == 'running'
+        run: |
+          echo "Testing API..."
+          curl -s "${{ steps.api-tunnel.outputs.url }}/health" | jq . || echo "API test completed"
+      
+      - name: Test Frontend tunnel
+        if: steps.frontend-tunnel.outputs.status == 'running'
+        run: |
+          echo "Testing Frontend..."
+          curl -s "${{ steps.frontend-tunnel.outputs.url }}" | grep -q "Frontend Service" && echo "✅ Frontend is accessible"
+      
+      # Simulate some work with the tunnels
+      - name: Use tunnels for testing
+        run: |
+          echo "Tunnels are now available for:"
+          echo "- Webhook integration testing"
+          echo "- Mobile app development"
+          echo "- API documentation demos"
+          echo "- Customer support debugging"
+          
+          # Keep alive for 2 minutes for manual testing
+          echo "Keeping tunnels alive for 2 minutes..."
+          sleep 120
+      
+      # Cleanup
+      - name: Cleanup services
+        if: always()
+        run: |
+          echo "Cleaning up services..."
+          [ -n "${{ env.API_PID }}" ] && kill ${{ env.API_PID }} || true
+          [ -n "${{ env.FRONTEND_PID }}" ] && kill ${{ env.FRONTEND_PID }} || true
+          [ -n "${{ env.ADMIN_PID }}" ] && kill ${{ env.ADMIN_PID }} || true
+          echo "✅ Cleanup complete"
+
+  microservices-example:
+    runs-on: ubuntu-latest
+    name: Microservices architecture example
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Start microservices
+        run: |
+          # This example shows how you might expose microservices
+          echo "Starting mock microservices..."
+          
+          # Auth service on 4000
+          mkdir -p services/auth
+          echo '{"service":"auth","port":4000}' > services/auth/info.json
+          cd services/auth && python -m http.server 4000 &
+          
+          # User service on 4001  
+          mkdir -p services/user
+          echo '{"service":"user","port":4001}' > services/user/info.json
+          cd services/user && python -m http.server 4001 &
+          
+          # Order service on 4002
+          mkdir -p services/order
+          echo '{"service":"order","port":4002}' > services/order/info.json
+          cd services/order && python -m http.server 4002 &
+          
+          sleep 3
+      
+      - name: Expose Auth Service
+        id: auth
+        uses: localxpose/localxpose-action@v1
+        with:
+          port: 4000
+          token: ${{ secrets.LX_ACCESS_TOKEN }}
+      
+      - name: Expose User Service
+        id: user
+        uses: localxpose/localxpose-action@v1
+        with:
+          port: 4001
+          token: ${{ secrets.LX_ACCESS_TOKEN }}
+      
+      - name: Expose Order Service
+        id: order
+        uses: localxpose/localxpose-action@v1
+        with:
+          port: 4002
+          token: ${{ secrets.LX_ACCESS_TOKEN }}
+      
+      - name: Service Discovery
+        run: |
+          # Create a service registry
+          cat > service-registry.json << EOF
+          {
+            "services": {
+              "auth": "${{ steps.auth.outputs.url }}",
+              "user": "${{ steps.user.outputs.url }}",
+              "order": "${{ steps.order.outputs.url }}"
+            },
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "environment": "development"
+          }
+          EOF
+          
+          echo "=== Service Registry ==="
+          cat service-registry.json | jq .
+          
+          # This registry could be used by other services or tests
+          echo "SERVICE_REGISTRY=$(cat service-registry.json | jq -c .)" >> $GITHUB_ENV
