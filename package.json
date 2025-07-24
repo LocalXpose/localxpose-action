@@ -1,0 +1,61 @@
+{
+  "name": "localxpose-action",
+  "private": true,
+  "version": "0.0.0-SNAPSHOT",
+  "description": "GitHub Action for LocalXpose tunneling",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc && ncc build lib/index.js -o dist --source-map --license licenses.txt",
+    "test": "jest",
+    "format": "prettier --write '**/*.ts'",
+    "format-check": "prettier --check '**/*.ts'",
+    "lint": "eslint src/**/*.ts",
+    "package": "npm run build",
+    "prepare": "npm run build",
+    "check-dist": "npm run build && git diff --exit-code dist/",
+    "all": "npm run format && npm run lint && npm run build && npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/localxpose/localxpose-action.git"
+  },
+  "keywords": [
+    "actions",
+    "tunnel",
+    "localxpose",
+    "loclx",
+    "local",
+    "expose",
+    "proxy",
+    "webhook",
+    "integration",
+    "testing",
+    "debug"
+  ],
+  "author": "LocalXpose <hello@localxpose.io>",
+  "license": "MIT",
+  "dependencies": {
+    "@actions/core": "^1.10.1",
+    "@actions/exec": "^1.1.1",
+    "@actions/github": "^6.0.0",
+    "@actions/tool-cache": "^2.0.1"
+  },
+  "devDependencies": {
+    "@semantic-release/git": "^10.0.1",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.10.5",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "@vercel/ncc": "^0.38.1",
+    "eslint": "^8.56.0",
+    "eslint-plugin-github": "^4.10.1",
+    "eslint-plugin-jest": "^27.6.0",
+    "jest": "^29.7.0",
+    "js-yaml": "^4.1.0",
+    "prettier": "^3.1.1",
+    "semantic-release": "^24.2.7",
+    "semantic-release-github-actions-tags": "^2.0.2",
+    "ts-jest": "^29.1.1",
+    "typescript": "^5.3.3"
+  }
+}

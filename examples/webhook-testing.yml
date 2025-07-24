@@ -1,0 +1,27 @@
+name: Example Webhook Integration Test
+on:
+  push:
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  test-webhooks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Start application
+        run: npm start &
+        
+      - name: Create tunnel for webhook testing
+        uses: localxpose/localxpose-action@v1
+        with:
+          port: 3000
+          authtoken: ${{ secrets.LX_ACCESS_TOKEN }}
+          type: http
+        id: tunnel
+        
+      - name: Configure webhook
+        run: |
+          curl -X POST https://api.stripe.com/v1/webhooks \
+            -u "${{ secrets.STRIPE_API_KEY }}:" \
+            -d url="${{ steps.tunnel.outputs.url }}/webhook"

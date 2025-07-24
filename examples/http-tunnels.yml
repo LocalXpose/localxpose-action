@@ -1,0 +1,64 @@
+name: Example HTTP Tunnel Usage
+on:
+  push:
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  # Basic HTTP tunnel
+  basic-http:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start local web server
+        run: |
+          python3 -m http.server 3000 &
+          
+      - name: Create HTTP tunnel
+        uses: localxpose/localxpose-action@v1
+        id: tunnel
+        with:
+          port: 3000
+          token: ${{ secrets.LX_ACCESS_TOKEN }}
+          
+      - name: Use tunnel URL
+        run: |
+          echo "Your app is available at: ${{ steps.tunnel.outputs.url }}"
+          # Test the tunnel
+          curl -s ${{ steps.tunnel.outputs.url }}
+
+  # HTTP tunnel with custom region
+  regional-tunnel:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start API server
+        run: |
+          # Your API server here
+          node server.js &
+          
+      - name: Create tunnel in EU region
+        uses: localxpose/localxpose-action@v1
+        with:
+          port: 8080
+          region: eu  # Available: us, eu, ap
+          token: ${{ secrets.LX_ACCESS_TOKEN }}
+
+  # HTTP tunnel with subdomain (subscription required)
+  custom-subdomain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start app
+        run: npm start &
+        
+      - name: Create tunnel with reserved subdomain
+        uses: localxpose/localxpose-action@v1
+        with:
+          port: 3000
+          subdomain: myapp # Requires active subscription
+          token: ${{ secrets.LX_ACCESS_TOKEN }}
+
+# Note: LocalXpose supports additional tunnel types:
+# - TLS: For HTTPS/SSL connections
+# - TCP: For raw TCP connections (databases, etc.)
+# - UDP: For UDP protocols
+#
+# TCP and UDP tunnels use endpoints (ports) rather than domains.
+# These may be supported in future versions of this action.

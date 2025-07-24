@@ -1,0 +1,36 @@
+name: Issue Responder
+on:
+  issues:
+    types:
+      - opened
+  pull_request_target:
+    types:
+      - opened
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  respond-to-issue:
+    if: ${{ github.actor != 'dependabot[bot]' && github.actor != 'renovate[bot]' && github.actor != 'githubactions[bot]' && github.actor != 'octokitbot' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine issue or PR number
+        id: extract
+        run: echo "NUMBER=${{ github.event.issue.number || github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Respond to issue or PR
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ steps.extract.outputs.NUMBER }}
+          body: >
+            👾 Hi! Thanks for contributing to LocalXpose!
+
+            We appreciate you taking the time to help improve our GitHub Action. Our team will review your
+            submission as soon as possible.
+
+            **Security Notice:** If this relates to a security vulnerability, please email security@localxpose.io
+            instead of discussing it here.
+
+            Thanks again for being part of our community! 🚀

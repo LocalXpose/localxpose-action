@@ -1,0 +1,417 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  # Run unit tests and code quality checks
+  test-and-lint:
+    runs-on: ubuntu-latest
+    name: Test & Lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install Dependencies
+        id: install
+        run: npm clean-install
+
+      - name: Check formatting
+        run: npm run format-check
+
+      - name: Lint
+        run: npm run lint
+            
+      - name: Build
+        run: npm run build
+
+      - name: Run unit tests with coverage
+        run: npm test -- --coverage
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+
+  # Test the action on multiple platforms
+  integration-test:
+    needs: test-and-lint
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            platform: Linux
+          - os: windows-latest
+            platform: Windows
+          - os: macos-latest
+            platform: macOS
+
+    runs-on: ${{ matrix.os }}
+    name: Integration Test (${{ matrix.platform }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create test content
+        id: test-content
+        shell: bash
+        run: |
+          # Generate unique test ID
+          TEST_ID="${{ github.run_id }}-${{ github.run_number }}-${{ matrix.os }}"
+          echo "TEST_ID=$TEST_ID" >> $GITHUB_OUTPUT
+          
+          # Create test HTML with unique identifier
+          mkdir -p test-app
+          cat > test-app/index.html << EOF
+          <!DOCTYPE html>
+          <html>
+          <head><title>LocalXpose CI Test</title></head>
+          <body>
+            <h1>LocalXpose Action Test</h1>
+            <p>Platform: ${{ matrix.platform }}</p>
+            <p>Test ID: $TEST_ID</p>
+            <p>Time: <span id="time"></span></p>
+            <script>
+              document.getElementById('time').textContent = new Date().toISOString();
+            </script>
+          </body>
+          </html>
+          EOF
+
+      - name: Start test server (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd test-app && python3 -m http.server 8080 --bind 127.0.0.1 &
+          echo "SERVER_PID=$!" >> $GITHUB_ENV
+          sleep 2
+          curl -f http://localhost:8080 || exit 1
+      
+      - name: Start test server (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          # Start Python server as a background process
+          $process = Start-Process -FilePath "python" -ArgumentList "-m", "http.server", "8080", "--bind", "127.0.0.1" -WorkingDirectory "test-app" -PassThru -WindowStyle Hidden
+          Write-Host "Started server process with PID: $($process.Id)"
+          echo "SERVER_PID=$($process.Id)" >> $env:GITHUB_ENV
+          
+          Start-Sleep -Seconds 2
+          
+          # Verify server is running
+          try {
+            $response = Invoke-WebRequest -Uri http://localhost:8080 -UseBasicParsing
+            Write-Host "✅ Local server is running"
+          } catch {
+            Write-Host "❌ Failed to start local server"
+            exit 1
+          }
+      
+      - name: Test LocalXpose Action
+        id: tunnel
+        uses: ./
+        with:
+          port: 8080
+          token: ${{ secrets.LX_ACCESS_TOKEN }}
+      
+      - name: Display tunnel info
+        run: |
+          echo "Tunnel URL: ${{ steps.tunnel.outputs.url }}"
+          echo "Hostname: ${{ steps.tunnel.outputs.hostname }}"
+          echo "Status: ${{ steps.tunnel.outputs.status }}"
+          echo "Platform: ${{ matrix.platform }}"
+      
+      - name: Verify tunnel is running
+        if: steps.tunnel.outputs.status != 'running'
+        run: |
+          echo "❌ Tunnel failed to start"
+          echo "Status: ${{ steps.tunnel.outputs.status }}"
+          exit 1
+      
+      - name: Test tunnel connectivity (Unix)
+        if: matrix.os != 'windows-latest' && steps.tunnel.outputs.url != ''
+        run: |
+          echo "Testing tunnel URL: ${{ steps.tunnel.outputs.url }}"
+          
+          # Allow time for tunnel to fully establish
+          sleep 5
+          
+          # Test tunnel with retries
+          MAX_RETRIES=3
+          RETRY_DELAY=5
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i/$MAX_RETRIES..."
+            
+            # Fetch the page through the tunnel
+            if response=$(curl -s --max-time 30 "${{ steps.tunnel.outputs.url }}"); then
+              echo "✅ Successfully accessed tunnel"
+              
+              # Verify it contains our test ID
+              if echo "$response" | grep -q "${{ steps.test-content.outputs.TEST_ID }}"; then
+                echo "✅ Tunnel response contains correct test ID!"
+                echo "Response preview:"
+                echo "$response" | head -20
+                exit 0
+              else
+                echo "❌ Response doesn't contain test ID"
+                echo "Expected: ${{ steps.test-content.outputs.TEST_ID }}"
+                echo "Got:"
+                echo "$response" | head -20
+              fi
+            else
+              echo "❌ Failed to access tunnel URL (attempt $i): curl failed"
+            fi
+            
+            if [ $i -lt $MAX_RETRIES ]; then
+              echo "Retrying in $RETRY_DELAY seconds..."
+              sleep $RETRY_DELAY
+            fi
+          done
+          
+          echo "❌ Could not verify tunnel content after $MAX_RETRIES attempts"
+          echo "Tunnel verification failed - the tunnel URL is not accessible"
+          exit 1
+      
+      - name: Test tunnel connectivity (Windows)
+        if: matrix.os == 'windows-latest' && steps.tunnel.outputs.url != ''
+        shell: pwsh
+        run: |
+          Write-Host "Testing tunnel URL: ${{ steps.tunnel.outputs.url }}"
+          
+          # Allow time for tunnel to fully establish
+          Start-Sleep -Seconds 5
+          
+          $maxRetries = 3
+          $retryDelay = 5
+          
+          for ($i = 1; $i -le $maxRetries; $i++) {
+            Write-Host "Attempt $i/$maxRetries..."
+            
+            try {
+              # Fetch the page through the tunnel
+              $response = Invoke-WebRequest -Uri "${{ steps.tunnel.outputs.url }}" -UseBasicParsing -TimeoutSec 30
+              Write-Host "✅ Successfully accessed tunnel"
+              
+              # Verify it contains our test ID
+              if ($response.Content -match "${{ steps.test-content.outputs.TEST_ID }}") {
+                Write-Host "✅ Tunnel response contains correct test ID!"
+                Write-Host "Response preview:"
+                Write-Host ($response.Content.Substring(0, [Math]::Min(500, $response.Content.Length)))
+                exit 0
+              } else {
+                Write-Host "❌ Response doesn't contain test ID"
+                Write-Host "Expected: ${{ steps.test-content.outputs.TEST_ID }}"
+                Write-Host "Got:"
+                Write-Host ($response.Content.Substring(0, [Math]::Min(500, $response.Content.Length)))
+              }
+            } catch {
+              Write-Host "❌ Failed to access tunnel URL (attempt $i): $_"
+            }
+            
+            if ($i -lt $maxRetries) {
+              Write-Host "Retrying in $retryDelay seconds..."
+              Start-Sleep -Seconds $retryDelay
+            }
+          }
+          
+          Write-Host "❌ Could not verify tunnel content after $maxRetries attempts"
+          Write-Host "Tunnel verification failed - the tunnel URL is not accessible"
+          exit 1
+      
+      - name: Verify action doesn't block
+        shell: bash
+        run: |
+          echo "✅ Action completed without blocking!"
+          echo "This step runs after the tunnel action, proving it doesn't block"
+      
+      - name: Cleanup (Unix)
+        if: always() && matrix.os != 'windows-latest'
+        run: |
+          [ -n "${{ env.SERVER_PID }}" ] && kill ${{ env.SERVER_PID }} || true
+      
+      - name: Cleanup (Windows)
+        if: always() && matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          if ($env:SERVER_PID) {
+            Write-Host "Stopping server process with PID: $env:SERVER_PID"
+            $process = Get-Process -Id $env:SERVER_PID -ErrorAction SilentlyContinue
+            if ($process) {
+              Stop-Process -Id $env:SERVER_PID -Force
+              Write-Host "Server process stopped"
+            } else {
+              Write-Host "Server process with PID $env:SERVER_PID not found (may have already exited)"
+            }
+          }
+
+  # Test different regions
+  region-test:
+    name: Region Test (${{ matrix.region || 'default' }})
+    runs-on: ubuntu-latest
+    needs: test-and-lint
+    strategy:
+      matrix:
+        include:
+          - region: ''
+            region_name: 'default'
+          - region: 'us'
+            region_name: 'US'
+          - region: 'eu'
+            region_name: 'EU'
+          - region: 'ap'
+            region_name: 'AP'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create test server
+        id: test-content
+        run: |
+          # Generate unique test ID
+          TEST_ID="region-test-${{ matrix.region_name }}-$(date +%s)-$RANDOM"
+          echo "TEST_ID=$TEST_ID" >> $GITHUB_OUTPUT
+          
+          # Create simple HTTP server
+          cat > server.js << EOF
+          const http = require('http');
+          const server = http.createServer((req, res) => {
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end('<html><body><h1>LocalXpose Region Test</h1><p>Region: ${{ matrix.region_name }}</p><p>Test ID: ' + '$TEST_ID' + '</p></body></html>');
+          });
+          server.listen(3456, () => console.log('Test server running on port 3456'));
+          EOF
+          
+          # Start server
+          node server.js &
+          echo "SERVER_PID=$!" >> $GITHUB_ENV
+          sleep 2
+      
+      - name: Start LocalXpose tunnel
+        id: tunnel
+        uses: ./
+        with:
+          port: 3456
+          region: ${{ matrix.region }}
+        env:
+          LX_ACCESS_TOKEN: ${{ secrets.LX_ACCESS_TOKEN }}
+      
+      - name: Verify tunnel outputs
+        run: |
+          echo "Testing region: ${{ matrix.region_name }}"
+          echo "Tunnel URL: ${{ steps.tunnel.outputs.url }}"
+          echo "Hostname: ${{ steps.tunnel.outputs.hostname }}"
+          echo "Status: ${{ steps.tunnel.outputs.status }}"
+      
+      - name: Test tunnel connectivity
+        if: steps.tunnel.outputs.url != ''
+        run: |
+          echo "Testing tunnel URL: ${{ steps.tunnel.outputs.url }}"
+          
+          # Allow time for tunnel to establish
+          sleep 5
+          
+          # Test with retries
+          MAX_RETRIES=3
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i/$MAX_RETRIES..."
+            
+            if response=$(curl -s --max-time 30 "${{ steps.tunnel.outputs.url }}"); then
+              echo "✅ Successfully accessed tunnel"
+              
+              # Verify region is working
+              if echo "$response" | grep -q "Region: ${{ matrix.region_name }}"; then
+                echo "✅ Correct region displayed"
+              fi
+              
+              # Verify test ID
+              if echo "$response" | grep -q "${{ steps.test-content.outputs.TEST_ID }}"; then
+                echo "✅ Tunnel response verified!"
+                exit 0
+              else
+                echo "❌ Response doesn't contain test ID"
+              fi
+            else
+              echo "❌ Failed to access tunnel URL (attempt $i)"
+            fi
+            
+            [ $i -lt $MAX_RETRIES ] && sleep 5
+          done
+          
+          echo "❌ Could not verify tunnel after $MAX_RETRIES attempts"
+          exit 1
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ ! -z "$SERVER_PID" ]; then
+            kill $SERVER_PID || true
+          fi
+
+  # Test PR comment functionality
+  pr-comment-test:
+    if: github.event_name == 'pull_request'
+    needs: test-and-lint
+    runs-on: ubuntu-latest
+    name: Test PR Comment
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Start test server
+        run: |
+          mkdir -p pr-test-app
+          echo '<!DOCTYPE html><html><body><h1>PR Preview Test</h1></body></html>' > pr-test-app/index.html
+          cd pr-test-app && python3 -m http.server 3000 --bind 127.0.0.1 &
+          echo "SERVER_PID=$!" >> $GITHUB_ENV
+          sleep 2
+      
+      - name: Test with PR comment
+        uses: ./
+        with:
+          port: 3000
+          token: ${{ secrets.LX_ACCESS_TOKEN }}
+          pr-comment: true
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          [ -n "${{ env.SERVER_PID }}" ] && kill ${{ env.SERVER_PID }} || true
+
+  # All tests must pass
+  all-tests-pass:
+    needs: [test-and-lint, integration-test, region-test]
+    if: always()
+    runs-on: ubuntu-latest
+    name: All Tests Pass
+    steps:
+      - name: Check test results
+        run: |
+          if [[ "${{ needs.test-and-lint.result }}" != "success" ]]; then
+            echo "❌ test-and-lint job failed"
+            exit 1
+          fi
+          
+          if [[ "${{ needs.integration-test.result }}" != "success" ]]; then
+            echo "❌ integration-test job failed"
+            exit 1
+          fi
+          
+          if [[ "${{ needs.region-test.result }}" != "success" ]]; then
+            echo "❌ region-test job failed"
+            exit 1
+          fi
+          
+          echo "✅ All tests passed!"

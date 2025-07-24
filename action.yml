@@ -1,0 +1,61 @@
+name: 'LocalXpose Tunnel'
+description: 'Create secure tunnels for webhooks, integration testing, and development environments'
+author: 'LocalXpose'
+branding:
+  icon: 'aperture' # or: cpu, octagon, radio, shield, x?
+  color: 'purple'
+
+inputs:
+  port:
+    description: 'Local port to expose'
+    required: true
+
+  token:
+    description: 'LocalXpose token (can also use LX_ACCESS_TOKEN env var)'
+    required: false
+    default: ''
+  
+  type:
+    description: 'Tunnel type (currently only http is supported)'
+    required: false
+    default: 'http'
+  
+  region:
+    description: 'Tunnel region (us, eu, ap)'
+    required: false
+    default: 'us'
+  
+  subdomain:
+    description: 'Request a specific subdomain (requires subscription)'
+    required: false
+    default: ''
+  
+  pr-comment:
+    description: 'Post tunnel URL as a PR comment'
+    required: false
+    default: 'false'
+  
+  pr-comment-name:
+    description: 'Display name for this tunnel in PR comment'
+    required: false
+    default: ''
+  
+  github-token:
+    description: 'GitHub token for PR comments (defaults to GITHUB_TOKEN)'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  url:
+    description: 'Public tunnel URL'
+  
+  hostname:
+    description: 'Tunnel hostname (without protocol)'
+  
+  status:
+    description: 'Tunnel status (running, failed)'
+
+runs:
+  using: 'node20' # see .node-version
+  main: 'dist/index.js'
+  post: 'dist/index.js'
