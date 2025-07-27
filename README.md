@@ -4,7 +4,7 @@ Create secure tunnels for webhooks, integration testing, and PR preview environm
 
 [![GitHub Marketplace](https://img.shields.io/badge/Marketplace-LocalXpose-blue.svg)](https://github.com/marketplace/actions/localxpose-tunnel)
 [![CI](https://github.com/localxpose/localxpose-action/actions/workflows/ci.yml/badge.svg)](https://github.com/localxpose/localxpose-action/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/localxpose/localxpose-action/actions/workflows/codeql.yml/badge.svg)](https://github.com/localxpose/localxpose-action/actions/workflows/codeql.yml)
+[![CodeQL](https://github.com/LocalXpose/localxpose-action/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/LocalXpose/localxpose-action/actions/workflows/github-code-scanning/codeql)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Features
@@ -15,6 +15,7 @@ Create secure tunnels for webhooks, integration testing, and PR preview environm
 - 🌍 **Global Regions** - Supports US, EU, and AP entrypoints
 - 💬 **PR Comments** - Automatic preview URLs in pull requests
 - ⚡ **Fast & Reliable** - Production-ready tunnel infrastructure
+- ✅ **Zero Boilerplate** - Be online in one step. No wait-for-it.sh, no copypasta.
 
 ## Quick Start
 
@@ -212,8 +213,6 @@ This creates a single PR comment that shows all active tunnels, grouped by workf
 > - Only HTTP tunnels are supported (no HTTPS/TCP/TLS)
 > - Tunnels automatically close after 15 minutes
 > - First-time visitors see a warning page before accessing your content
->
-> 3. Add it to your repository secrets as `LX_ACCESS_TOKEN`
 
 ### 2. Add to Repository Secrets
 

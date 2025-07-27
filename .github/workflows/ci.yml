@@ -7,6 +7,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   # Run unit tests and code quality checks
   test-and-lint:
